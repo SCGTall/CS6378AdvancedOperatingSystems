@@ -1,0 +1,70 @@
+All files in result folder are copied from /home/012/c/cx/cxl190012/AOS/
+Use folder serverC1 as the working space for server machine C1.
+Use folder clientC2 as the working space for client machine C2.
+Firstly, run client.jar in serverC1 (dc21).
+Then, run client.jar in clientC2 (dc22).
+The test directory and files are in clientC2/D1.
+Although I have write solution for the situation if D1copy exists, but I suggest you remove D1copy in server folder before you run the code.
+
+Command line result in dc21 ----- C1 server
+{dc21:~} cd AOS/serverC1
+{dc21:~/AOS/serverC1} ls
+server.jar
+{dc21:~/AOS/serverC1} java -jar server.jar
+listening...
+Client connected.
+From client: Hello server.
+From client: Create D1copy.
+Create new directory: D1copy
+To client: D1copy has been created successfully,
+From client: Create F2.txt.
+Create file: F2.txt
+To client: F2.txt has been created successfully,
+From client: Sending content of D1copy.
+Writing F2.txt.
+To client: F2.txt has been saved successfully,
+From client: Create F1.txt.
+Create file: F1.txt
+To client: F1.txt has been created successfully,
+From client: Sending content of D1copy.
+Writing F1.txt.
+To client: F1.txt has been saved successfully,
+Finish receiving all files and exit now.
+{dc21:~/AOS/serverC1} ls
+D1copy  server.jar
+{dc21:~/AOS/serverC1} cd D1copy
+{dc21:~/AOS/serverC1/D1copy} ls
+F1.txt  F2.txt
+{dc21:~/AOS/serverC1/D1copy} 
+
+Command line result in dc22 ---- C2 client
+{dc22:~} cd AOS/clientC2
+{dc22:~/AOS/clientC2} ls
+client.jar  D1
+{dc22:~/AOS/clientC2} cd D1
+{dc22:~/AOS/clientC2/D1} ls
+F1.txt  F2.txt
+{dc22:~/AOS/clientC2/D1} cd ..
+{dc22:~/AOS/clientC2} java -jar client.jar
+Say hello to server.
+Send new directory name: D1copy.
+To server: Create D1copy.
+From server: D1copy has been created successfully,
+Send new file name: F2.txt.
+To server: Create F2.txt.
+From server: F2.txt has been created successfully,
+Start sending content of F2.txt.
+End sending content of F2.txt.
+To server: Finish sending F2.txt.
+From server: F2.txt has been saved successfully,
+Send new file name: F1.txt.
+To server: Create F1.txt.
+From server: F1.txt has been created successfully,
+Start sending content of F1.txt.
+End sending content of F1.txt.
+To server: Finish sending F1.txt.
+From server: F1.txt has been saved successfully,
+To server: Finish sending all files.
+Finish sending all files in directory and exit now.
+{dc22:~/AOS/clientC2} 
+
