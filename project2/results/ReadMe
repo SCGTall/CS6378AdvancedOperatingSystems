@@ -1,0 +1,8 @@
+For server:
+java -jar server.jar <serverID>
+
+For client:
+java -jar client.jar<clientID>
+
+Always start servers earlier than clients.
+Always start small id nodes earlier than bigger ones.
