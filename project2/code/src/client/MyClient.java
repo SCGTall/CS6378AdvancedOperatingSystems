@@ -1,7 +1,5 @@
 package client;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -65,7 +63,7 @@ public class MyClient extends Socket {
     private static ArrayList<String> fileList;  // file list in server
     private static int clientID;
     private static Random random;  // set seed to client ID
-    private static MySocketObject[] socketList = new MySocketObject[serverList.length];
+    private static Socket[] socketList = new Socket[serverList.length];
     
     private static class Input {
     	private int cmd;
@@ -85,38 +83,13 @@ public class MyClient extends Socket {
     	}
     }
     
-    private static class MySocketObject {
-    	private Socket socket;
-    	private DataInputStream din;
-    	private DataOutputStream dout;
-    	
-    	public MySocketObject(Socket s) throws IOException {
-    		this.socket = s;
-    		InputStream in  = s.getInputStream();
-    		this.din = new DataInputStream(in);
-        	OutputStream out = s.getOutputStream();
-    		this.dout = new DataOutputStream(out);
-    	}
-    	
-    	public Socket getSocket() {
-    		return this.socket;
-    	}
-    	
-    	public DataInputStream getDin() {
-    		return this.din;
-    	}
-    	
-    	public DataOutputStream getDout() {
-    		return this.dout;
-    	}
-    }
-    
     private static final int BUFFER_SIZE = 64;
     
-    private static void toSocket(DataOutputStream dout, CMD cmd, String s) throws IOException {
-    	String combined = "|" + Integer.toString(cmd.getValue()) + "|" + s + "|";
+    private static void toSocket(Socket s, CMD cmd, String msg) throws IOException {
+    	String combined = "|" + Integer.toString(cmd.getValue()) + "|" + msg + "|";
     	String format = "%-" + Integer.toString(BUFFER_SIZE) + "s";
     	String padded = String.format(format, combined); // 64 byte
+		OutputStream dout = s.getOutputStream();
 		dout.write(padded.getBytes());
 		dout.flush();
 		//System.out.println("Output:(" + padded + ")");
@@ -124,9 +97,10 @@ public class MyClient extends Socket {
 	}
     
     
-    private static Input fromSocket(DataInputStream din) {
+    private static Input fromSocket(Socket s) {
     	byte buf[] = new byte[BUFFER_SIZE];
 		try {
+			InputStream din = s.getInputStream();
 			din.read(buf);
 		} catch (IOException e) {
 			return new Input(5, null);
@@ -138,13 +112,13 @@ public class MyClient extends Socket {
 		int start = 3;
 		for (int i = start; i < BUFFER_SIZE; i++) {
 			if (padded.charAt(i) == '|') {  // end of all messages
-				String s = padded.substring(start, i);
-				msgs.add(s);
+				String tmp = padded.substring(start, i);
+				msgs.add(tmp);
 				break;
 			}
 			if (padded.charAt(i) == '&')  {  // seperator of messages
-				String s = padded.substring(start, i);
-				msgs.add(s);
+				String tmp = padded.substring(start, i);
+				msgs.add(tmp);
 				start = i + 1;
 			}
 		}
@@ -152,19 +126,17 @@ public class MyClient extends Socket {
     }
     
 
-	private static ArrayList<String> enquiry(MySocketObject s) {
+	private static ArrayList<String> enquiry(Socket s) {
 		ArrayList<String> files = new ArrayList<String>();
 		try {
 			System.out.println("[Enquiry]");
-			DataInputStream din = s.getDin();
-			DataOutputStream dout = s.getDout();
     		int cmd;
     		// enquire file list from server
     		String enquiryWord = "Enquiry list of hosted files to client " + Integer.toString(clientID);
-    		toSocket(dout, CMD.Enquiry, enquiryWord);
+    		toSocket(s, CMD.Enquiry, enquiryWord);
     		boolean flag = true;
     		while (flag) {
-    			Input inp = fromSocket(din);
+    			Input inp = fromSocket(s);
     			cmd = inp.getCMD();
     			if (cmd == CMD.Next.getValue()) {
     				flag = false;
@@ -187,22 +159,20 @@ public class MyClient extends Socket {
 	}
     
 
-	private static void read(MySocketObject s, String fileName, String timestamp) {
+	private static void read(Socket s, String fileName, String timestamp) {
 		try {
-			DataInputStream din = s.getDin();
-			DataOutputStream dout = s.getDout();
     		// send message to server
 			String msg = fileName + "&" + timestamp;
-    		toSocket(dout, CMD.Read, msg);
+    		toSocket(s, CMD.Read, msg);
     		// receive last line of target file
-    		Input inp = fromSocket(din);
+    		Input inp = fromSocket(s);
     		if (inp.getCMD() == CMD.Read.getValue()) {
     			System.out.println("Read last line from " + fileName + ": " + inp.getMSG(0));
     		} else {
     			System.out.println("Wrong CMD code happen in Read! CMD: " + Integer.toString(inp.getCMD()));
     		}
     		// wait for server
-    		Input inp2 = fromSocket(din);
+    		Input inp2 = fromSocket(s);
     		if (inp2.getCMD() != CMD.Next.getValue()) {
     			System.out.println("Wrong CMD code happen in Read! CMD: " + Integer.toString(inp2.getCMD()));
     		}
@@ -212,17 +182,15 @@ public class MyClient extends Socket {
 	}
     
     
-    private static void write(MySocketObject s, String fileName, String timestamp) {
+    private static void write(Socket s, String fileName, String timestamp) {
     	try {
-    		DataInputStream din = s.getDin();
-			DataOutputStream dout = s.getDout();
     		// send message to server
 			String newLine = Integer.toString(clientID) + ", " + timestamp;
 			String msg = fileName + "&" + timestamp + "&" + newLine;
-    		toSocket(dout, CMD.Write, msg);
+    		toSocket(s, CMD.Write, msg);
     		System.out.println("Write new line to " + fileName + ": " + newLine);
     		// wait for server
-    		Input inp = fromSocket(din);
+    		Input inp = fromSocket(s);
     		if (inp.getCMD() != CMD.Next.getValue()) {
     			System.out.println("Wrong CMD code happen in Write! CMD: " + Integer.toString(inp.getCMD()));
     		}
@@ -233,14 +201,10 @@ public class MyClient extends Socket {
 	}
     
     
-    private static void beforeCloseSocket(MySocketObject s) {
+    private static void beforeCloseSocket(Socket s) {
     	try {
-    		DataInputStream din = s.getDin();
-			DataOutputStream dout = s.getDout();
-    		Socket socket = s.getSocket();
-    		toSocket(dout, CMD.Exit, "");
-    		din.close();
-    		dout.close();
+    		Socket socket = s;
+    		toSocket(s, CMD.Exit, "");
     		socket.close();
         } catch (IOException e) {
             e.printStackTrace();
@@ -248,7 +212,7 @@ public class MyClient extends Socket {
     }
 	
 
-	private static MySocketObject getRandomSocket() {
+	private static Socket getRandomSocket() {
 		int serverID = random.nextInt(serverList.length);
 		System.out.print("To server " + Integer.toString(serverID) + ":");
 		return socketList[serverID];
@@ -287,10 +251,8 @@ public class MyClient extends Socket {
 		try {
 			for (int i = 0; i < serverList.length; i++) {
 				Socket s = new Socket(serverList[i], portList[i]);
-				socketList[i] = new MySocketObject(s);
-				DataOutputStream dout = socketList[i].getDout();
-				dout.writeInt(clientID);// send client id
-				dout.flush();
+				socketList[i] = s;
+				toSocket(s, CMD.Message, Integer.toString(clientID));
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -307,7 +269,7 @@ public class MyClient extends Socket {
     			write(getRandomSocket(), getRandomFile(), getLocalTimestamp());
     		}
     	}
-    	for (MySocketObject s : socketList) {
+    	for (Socket s : socketList) {
     		beforeCloseSocket(s);
     	}
     	System.out.println("Finish " + Integer.toString(ROUND_TIMES) + " rounds and exit.");

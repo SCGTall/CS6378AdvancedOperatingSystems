@@ -1,8 +1,6 @@
 package server;
 
 import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -76,8 +74,8 @@ public class MyServer {
     private static Object readyLock = new Object();
     private static boolean allClientsReady = false;
     private static String prefix;  // prefix of folder
-    private static ArrayList<MySocketObject> serverLan = new ArrayList<MySocketObject>(serverList.length);
-    private static ArrayList<MySocketObject> clientLan = new ArrayList<MySocketObject>(CLIENT_NUM);
+    private static ArrayList<Socket> serverLan = new ArrayList<Socket>();
+    private static ArrayList<Socket> clientLan = new ArrayList<Socket>();
     private static ArrayList<String> fileList = new ArrayList<String>();
     
     private static class Input {
@@ -104,68 +102,44 @@ public class MyServer {
     
     private static final int BUFFER_SIZE = 64;
     
-    private static void toSocket(DataOutputStream dout, CMD cmd, String s) throws IOException {
-    	String combined = "|" + Integer.toString(cmd.getValue()) + "|" + s + "|";
+    private static void toSocket(Socket s, CMD cmd, String msg) throws IOException {
+    	String combined = "|" + Integer.toString(cmd.getValue()) + "|" + msg + "|";
     	String format = "%-" + Integer.toString(BUFFER_SIZE) + "s";
     	String padded = String.format(format, combined); // 64 byte
+		OutputStream dout = s.getOutputStream();
 		dout.write(padded.getBytes());
 		dout.flush();
-		//System.out.println("Output:(" + padded + ")");
+		System.out.println("Output:(" + padded + ")");
 		return;
 	}
     
     
-    private static Input fromSocket(DataInputStream din) {
+    private static Input fromSocket(Socket s) {
     	byte buf[] = new byte[BUFFER_SIZE];
 		try {
+			InputStream din = s.getInputStream();
 			din.read(buf);
 		} catch (IOException e) {
 			return new Input(5, null);
 		}
 		String padded = new String(buf);
 		int cmd = padded.charAt(1) - '0';
-		//System.out.println("Input: (" + padded + ")");
+		System.out.println("Input: (" + padded + ")");
 		ArrayList<String> msgs = new ArrayList<String>();
 		int start = 3;
 		for (int i = start; i < BUFFER_SIZE; i++) {
 			if (padded.charAt(i) == '|') {  // end of all messages
-				String s = padded.substring(start, i);
-				msgs.add(s);
+				String tmp = padded.substring(start, i);
+				msgs.add(tmp);
 				break;
 			}
 			if (padded.charAt(i) == '&')  {  // seperator of messages
-				String s = padded.substring(start, i);
-				msgs.add(s);
+				String tmp = padded.substring(start, i);
+				msgs.add(tmp);
 				start = i + 1;
 			}
 		}
 		return new Input(cmd, msgs);
-    }
-    
-    private static class MySocketObject {
-    	private Socket socket;
-    	private DataInputStream din;
-    	private DataOutputStream dout;
-    	
-    	public MySocketObject(Socket s) throws IOException {
-    		this.socket = s;
-    		InputStream in  = s.getInputStream();
-    		this.din = new DataInputStream(in);
-        	OutputStream out = s.getOutputStream();
-    		this.dout = new DataOutputStream(out);
-    	}
-    	
-    	public Socket getSocket() {
-    		return this.socket;
-    	}
-    	
-    	public DataInputStream getDin() {
-    		return this.din;
-    	}
-    	
-    	public DataOutputStream getDout() {
-    		return this.dout;
-    	}
     }
     
     private static class Operation {
@@ -429,9 +403,8 @@ public class MyServer {
 				Files.write(Paths.get(writeDir), newLine.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
 				// write to remote
 				String msg = o.originalMSG;
-				for (MySocketObject s : serverLan) {
-					DataOutputStream dout = s.getDout();
-					toSocket(dout, CMD.Write, msg);
+				for (Socket s : serverLan) {
+					toSocket(s, CMD.Write, msg);
 				}
         		ss.blockForWrite = true;
         		ss.initFinishWrite();
@@ -454,8 +427,7 @@ public class MyServer {
 	        		if (ss.deferred[i]) {  // if ReplyDeferred [j]
 	        			ss.alist[i] = false;
 	        			ss.deferred[i] = false;  // A[j] := ReplyDeferred [j] := false;
-	        			DataOutputStream dout = serverLan.get(i).getDout();
-	        			toSocket(dout, CMD.Reply, fileName);  // Send (REPLY (ME), j)
+	        			toSocket(serverLan.get(i), CMD.Reply, fileName);  // Send (REPLY (ME), j)
 	        		}
 	        	}
         	} catch (IOException e) {
@@ -479,12 +451,11 @@ public class MyServer {
         public void request(Operation o) {
         	ss.waiting = true;  // Waiting := true;
         	try {
-        		for (MySocketObject s : serverLan) {
-        			String ip = s.getSocket().getInetAddress().toString().substring(1);
+        		for (Socket s : serverLan) {
+        			String ip = s.getInetAddress().toString().substring(1);
                 	int id = getServerIndex(ip);
                 	if (!ss.alist[id]) {
-                		DataOutputStream dout = s.getDout();
-        				toSocket(dout, CMD.Request, o.fileName + "&" + o.timestamp);  // send (REQUEST (OurSequenceNumber, ME), j)
+        				toSocket(s, CMD.Request, o.fileName + "&" + o.timestamp);  // send (REQUEST (OurSequenceNumber, ME), j)
                 	}
     			}
         	} catch (IOException e) {
@@ -500,22 +471,20 @@ public class MyServer {
     // server to server
     public static class S2SThreadHandler implements Runnable {
     	
-        private MySocketObject s;
+        private Socket s;
         
         public S2SThreadHandler(Socket s) throws IOException {
-            this.s = new MySocketObject(s);
+            this.s = s;
             serverLan.add(this.s);  // record in serverLan in order to be found when need to close.
         }
         
         @Override
         public void run() {
             try {
-        		DataInputStream din = s.getDin();
-        		DataOutputStream dout = s.getDout();
         		int cmd;
         		boolean flag = true;
         		while (flag) {
-        			Input inp = fromSocket(din);
+        			Input inp = fromSocket(s);
         			cmd = inp.getCMD();
         			// use cmd to decide coming action
         			switch (cmd) {
@@ -526,28 +495,25 @@ public class MyServer {
 			        		// write to file
 			        		Files.write(Paths.get(writeDir), newLine.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
 			        		// tell end of write
-			        		toSocket(dout, CMD.Next, inp.getOriginalMSG());
+			        		toSocket(s, CMD.Next, inp.getOriginalMSG());
 			        		String log = "Server " + serverID + ": ";
 			        		log += "Replicate to " + fileName + " (" + inp.getMSG(2) + ").";
 			        		System.out.println(log);
 		    				break;
 		    			}
 	        			case 4: { // Next
-	        				String ip = s.getSocket().getInetAddress().toString().substring(1);
+	        				String ip = s.getInetAddress().toString().substring(1);
 		                	int id = getServerIndex(ip);
 		                	String fileName = inp.getMSG(0);
 		                	int fi = getFileIndex(fileName);
 		                	synchronized (locks.get(fi)) {
-		                		SharedState ss = states.get(fi);
-		                		if (ss.blockForWrite && ss.getHeadOperation().originalMSG.equals(inp.getOriginalMSG())) {
-		                			states.get(fi).finishWrite[id] = true;
-		                		}
+		                		states.get(fi).finishWrite[id] = true;
 		                	}
 	        				break;
 	        			}
 	        			case 5: {  // Exit
-	        				if (!s.getSocket().isClosed()) {
-	        					s.getSocket().shutdownInput();
+	        				if (!s.isClosed()) {
+	        					s.shutdownInput();
 	        				}
     	    				flag = false;
     	    				break;
@@ -557,7 +523,7 @@ public class MyServer {
 		    				String timestamp = inp.getMSG(1);
 		    				Date date = timestampToDate(timestamp);
 		    				int fi = getFileIndex(fileName);
-		    				String ip = s.getSocket().getInetAddress().toString().substring(1);
+		    				String ip = s.getInetAddress().toString().substring(1);
 		                	int id = getServerIndex(ip);
 	        				synchronized (locks.get(fi)) {
 	        					SharedState ss = states.get(fi);
@@ -570,11 +536,11 @@ public class MyServer {
 	        						ss.deferred[id] = true;// ReplyDeferred [j] :-- true
 	        					} else if (!(ss.using || ss.waiting) || (
 	        							ss.waiting && !ss.alist[id] && !ourPriority(our, date, id))) {  // not (Using or Waiting) or (Waiting and (not A [j]) and (not Our Priority))
-	        						toSocket(dout, CMD.Reply, fileName);  // send (REPLY(ME), j)
+	        						toSocket(s, CMD.Reply, fileName);  // send (REPLY(ME), j)
 	        					} else if (ss.waiting && ss.alist[id] && !ourPriority(our, date, id)) {  // Waiting and A[j] and (not Our Priority)
 	        						ss.alist[id] = false;  // A[j] := false;
-	        						toSocket(dout, CMD.Reply, fileName);  // send (REPLY(ME), j);
-	        						toSocket(dout, CMD.Request, fileName + "&" + timestamp);  // send (REQUEST (OurSequenceNumber, ME), j)
+	        						toSocket(s, CMD.Reply, fileName);  // send (REPLY(ME), j);
+	        						toSocket(s, CMD.Request, fileName + "&" + timestamp);  // send (REQUEST (OurSequenceNumber, ME), j)
 	        					} else {
 	        						System.out.println("Unhandled condition in Request handler.");
 	        					}
@@ -584,7 +550,7 @@ public class MyServer {
 	        			case 7: {  // Reply
 	        				String fileName = inp.getMSG(0);
 		    				int fi = getFileIndex(fileName);
-		    				String ip = s.getSocket().getInetAddress().toString().substring(1);
+		    				String ip = s.getInetAddress().toString().substring(1);
 		                	int id = getServerIndex(ip);
 		                	synchronized (locks.get(fi)) {
 		                		states.get(fi).alist[id] = true;  // A[j] := true
@@ -593,8 +559,8 @@ public class MyServer {
 	        			}
 	        			case -48: {  // EarlyExit
 	        				System.out.println("One server disconnected.");
-	        				if (!s.getSocket().isClosed()) {
-	        					s.getSocket().shutdownInput();
+	        				if (!s.isClosed()) {
+	        					s.shutdownInput();
 	        				}
 	        				flag = false;
     	    				break;
@@ -606,9 +572,7 @@ public class MyServer {
 		    			}
         			}
         		}
-        		din.close();
-            	dout.close();
-            	s.getSocket().close();
+            	s.close();
             } catch (IOException e) {
                 e.printStackTrace();
             } catch (ParseException e) {
@@ -630,27 +594,26 @@ public class MyServer {
     // client to server
     public static class C2SThreadHandler implements Runnable {
 
-    	private MySocketObject s;
+    	private Socket s;
         
         public C2SThreadHandler(Socket s) throws IOException {
-        	this.s = new MySocketObject(s);
+        	this.s = s;
         	clientLan.add(this.s);  // record in clientLan in order to be found when need to close.
         }
         
         @Override
         public void run() {
         	try {
-            	DataInputStream din = s.getDin();
-            	DataOutputStream dout = s.getDout();
         		int cmd;
         		boolean flag = true;
-        		int clientID = din.readInt();
+        		Input input = fromSocket(s);
+        		int clientID = Integer.parseInt(input.getMSG(0));
         		System.out.println("Client " + clientID + ": connected.");
         		while (flag) {
-        			if (s.getSocket().isClosed()) {
+        			if (s.isClosed()) {
         				break;
         			}
-        			Input inp = fromSocket(din);
+        			Input inp = fromSocket(s);
         			cmd = inp.getCMD();
         			String log = "Client " + clientID + ": ";
         			// use cmd to decide coming action
@@ -664,10 +627,10 @@ public class MyServer {
 	        				}
     	    				// traverse hosted files
     	    				for (String name : fileList) {
-    	    					toSocket(dout, CMD.Enquiry, name);
+    	    					toSocket(s, CMD.Enquiry, name);
     	    				}
     	    				// tell client to end
-    	    				toSocket(dout, CMD.Next, inp.getOriginalMSG());
+    	    				toSocket(s, CMD.Next, inp.getOriginalMSG());
     	    				log += "Enquiry.";
     	    				break;
     	    			}
@@ -689,9 +652,9 @@ public class MyServer {
     	    					}
     	    				}
     	        			// tell client last line
-    	        			toSocket(dout, CMD.Read, o.lastLine);
+    	        			toSocket(s, CMD.Read, o.lastLine);
     	        			// tell client to end
-    	        			toSocket(dout, CMD.Next, inp.getOriginalMSG());
+    	        			toSocket(s, CMD.Next, inp.getOriginalMSG());
     	        			log += "Read from " + fileName + " (" + o.lastLine + ").";
     	    				break;
     	    			}
@@ -712,13 +675,13 @@ public class MyServer {
     	    					}
     	    				}
     	    				// tell client to end
-    	            		toSocket(dout, CMD.Next, inp.getOriginalMSG());
+    	            		toSocket(s, CMD.Next, inp.getOriginalMSG());
     	            		log += "Write to " + fileName + " (" + o.newLine + ").";
     	    				break;
     	    			}
     	    			case 5: {  // Exit
     	    				flag = false;
-    	    				s.getSocket().shutdownInput();
+    	    				s.shutdownInput();
     	    				log += "Exit after all tasks finished.";
     	    				break;
     	    			}
@@ -730,17 +693,13 @@ public class MyServer {
         			}
         			System.out.println(log);
         		}
-        		din.close();
-            	dout.close();
-            	s.getSocket().close();  // close client to server socket after client sent Exit command.
+            	s.close();  // close client to server socket after client sent Exit command.
             } catch (IOException e) {
                 e.printStackTrace();
             } catch (ParseException e) {
 				e.printStackTrace();
 			}
         }
-        
-        
     }
     
     
@@ -865,13 +824,11 @@ public class MyServer {
 	    	executor.awaitTermination(500, TimeUnit.MILLISECONDS);
 	        server.close();
 	        // close all sockets
-	        for (MySocketObject s : serverLan) {
-	        	s.getDin().close();
-	        	s.getDout().close();
-	        	if (!s.getSocket().isClosed()) {
-	        		s.getSocket().shutdownInput();
+	        for (Socket s : serverLan) {
+	        	if (!s.isClosed()) {
+	        		s.shutdownInput();
 	        	}
-	        	s.getSocket().close();
+	        	s.close();
 	        }
 	        	
 		} catch (IOException e) {
