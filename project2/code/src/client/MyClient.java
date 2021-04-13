@@ -13,6 +13,7 @@ public class MyClient extends Socket {
     
 	// finals
     private static final int ROUND_TIMES = 20;
+    private static final boolean SHOW_LOG = false;
     private enum ACTION {
 		Read(0),
 		Write(1);
@@ -92,7 +93,9 @@ public class MyClient extends Socket {
 		OutputStream dout = s.getOutputStream();
 		dout.write(padded.getBytes());
 		dout.flush();
-		//System.out.println("Output:(" + padded + ")");
+		if (SHOW_LOG) {
+			System.out.println("Output:(" + padded + ")");
+		}
 		return;
 	}
     
@@ -106,7 +109,9 @@ public class MyClient extends Socket {
 			return new Input(5, null);
 		}
 		String padded = new String(buf);
-		//System.out.println("Input :(" + padded + ")");
+		if (SHOW_LOG) {
+			System.out.println("Input :(" + padded + ")");
+		}
 		// decode messages
 		String[] splited = padded.split("\\|", 0);
 		int cmd = Integer.parseInt(splited[1]);

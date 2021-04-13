@@ -31,7 +31,7 @@ public class MyServer {
 	private static final String FOLDER_DIR = "hosted";
 	private static final String ORIGINAL_HOSTED = "original";
 	private static final String JAR_NAME = "server.jar";
-	
+	 private static final boolean SHOW_LOG = true;
 	
 	// globals
 	private static String[] serverList = new String[] {
@@ -125,7 +125,9 @@ public class MyServer {
 		OutputStream dout = s.getOutputStream();
 		dout.write(padded.getBytes());
 		dout.flush();
-		System.out.println("Output:(" + padded + ")");
+		if (SHOW_LOG) {
+			System.out.println("Output:(" + padded + ")");
+		}
 		return;
 	}
     
@@ -142,7 +144,9 @@ public class MyServer {
 		if (padded.length() == 0) {
 			return new Input(5, -1, -1, null);
 		}
-		System.out.println("Input :(" + padded + ")");
+		if (SHOW_LOG) {
+			System.out.println("Input :(" + padded + ")");
+		}
 		// decode messages
 		String[] splited = padded.split("\\|", 0);
 		int cmd = Integer.parseInt(splited[1]);
@@ -246,6 +250,33 @@ public class MyServer {
 				return priorityQueue.get(0);
 			}
 		}
+
+		public boolean getAllReplies() {
+			for (int i = 0; i < alist.length; i++) {
+				if (i != serverID && alist[i] == false) {
+					return false;
+				}
+			}
+			return true;
+		}
+		
+		public void print() {
+			if (SHOW_LOG) {
+        		System.out.print("Alist: ");
+            	for (int i = 0; i < alist.length; i++) {
+            		System.out.print(alist[i]);
+            		System.out.print(" ");
+            	}
+            	System.out.print("\n");
+            	System.out.println(getAllReplies());
+            	System.out.print("Deferred: ");
+            	for (int i = 0; i < deferred.length; i++) {
+            		System.out.print(deferred[i]);
+            		System.out.print(" ");
+            	}
+            	System.out.print("\n");
+        	}
+		}
     	
     }
     
@@ -325,23 +356,19 @@ public class MyServer {
         	while (true) {  // have to release lock to let other thread change state
         		synchronized(lock) {
         			Operation head = ss.getHeadOperation();
-        			if (getAllReply(ss.alist) && head != null) {  // ready to go: waitfor (A[j] = true for all j ME);
+        			if (ss.getAllReplies() && head != null) {  // ready to go: waitfor (A[j] = true for all j ME);
         				ss.waiting = false;
         				ss.using = true;
         				if (head.cmd.equals(CMD.Read)) {
-        					System.out.println("###1###");
         					synRead(head);
         				} else if (head.cmd.equals(CMD.Write)) {
-        					System.out.println("###2###");
-        					synWrite(head);
+							synWrite(head);
         				} else {
         					System.out.println("Wrong cmd in Operation.");
         				}
-        				System.out.println("###3###");
         				release(head);
         			} else if (ss.haveNewHead && head != null) {  // request resource for new operation
         				request(head);
-        				System.out.println("###0###");
             		}
             	}
         	}
@@ -361,7 +388,7 @@ public class MyServer {
         		fis.close();
         		// tell client last line
     			toSocket(o.s, CMD.Next, "C" + o.clientID, o.fileIndex, lastLine + "&Next for read");
-    			System.out.println("To client " + o.clientID + ": Read from " + fileList.get(o.fileIndex) + " (" + o.newLine + ").");
+    			System.out.println("To client " + o.clientID + ": Read from " + fileList.get(o.fileIndex) + " (" + lastLine + ").");
         	} catch (IOException e) {
                 e.printStackTrace();
             }
@@ -381,23 +408,21 @@ public class MyServer {
 					}
 				}
         		ss.initFinishWrite();
-        		System.out.println("WStep1");
-        		while (true) {
-        			if (ss.allFinishWrite()) {
-        				break;
-        			}
-        			System.out.println("WStep2");
+        		while (!ss.allFinishWrite()) {
+        			Thread.sleep(100);
         		}
-        		System.out.println("WStep3");
         		// tell client to end
         		toSocket(o.s, CMD.Next, "C" + o.clientID, fi, "Next for write");
         		System.out.println("To client " + o.clientID + ": Write to " + fileList.get(o.fileIndex) + " (" + o.newLine + ").");
         	} catch (IOException e) {
                 e.printStackTrace();
-            }
+            } catch (InterruptedException e) {
+				e.printStackTrace();
+			}
 		}
 
 		private void release(Operation o) {
+			System.out.println("Enter release section.");
 			// remove finished opeartion from priority queue
 			ss.priorityQueue.remove(0);
 			if (ss.priorityQueue.size() > 0) {
@@ -405,8 +430,10 @@ public class MyServer {
 			}
 			// release resource
         	ss.using = false;
+        	System.out.println("Before release:");
+        	ss.print();
         	try {
-	        	for (int i = 0; i < ss.alist.length; i++) {
+	        	for (int i = 0; i < serverList.length; i++) {
 	        		if (ss.deferred[i]) {  // if ReplyDeferred [j]
 	        			ss.alist[i] = false;
 	        			ss.deferred[i] = false;  // A[j] := ReplyDeferred [j] := false;
@@ -416,16 +443,9 @@ public class MyServer {
         	} catch (IOException e) {
 				e.printStackTrace();
 			}
+        	System.out.println("After release:");
+        	ss.print();
         }
-        
-        private boolean getAllReply(boolean[] alist) {
-			for (int i = 0; i < alist.length; i++) {
-				if (i != serverID && alist[i] == false) {
-					return false;
-				}
-			}
-			return true;
-		}
 		
         public void request(Operation o) {
         	ss.waiting = true;  // Waiting := true;
@@ -495,13 +515,15 @@ public class MyServer {
 		                	int fi = inp.getFileIndex();
 		                	int id = inp.getFromID();
 		                	states.get(fi).finishWrite[id] = true;
-		                	System.out.print("Finish Write: ");
-		                	for (int i = 0; i < serverList.length; i++) {
-		                		System.out.print(states.get(fi).finishWrite[i]);
-		                		System.out.print(" ");
+		                	if (SHOW_LOG) {
+		                		System.out.print("Finish Write: ");
+			                	for (int i = 0; i < serverList.length; i++) {
+			                		System.out.print(states.get(fi).finishWrite[i]);
+			                		System.out.print(" ");
+			                	}
+			                	System.out.print(states.get(fi).allFinishWrite());
+			                	System.out.print("\n");
 		                	}
-		                	System.out.print(states.get(fi).allFinishWrite());
-		                	System.out.print("\n");
 		                	break;
 	        			}
 	        			case 5: {  // Exit
@@ -517,9 +539,11 @@ public class MyServer {
 		    				Date date = timestampToDate(timestamp);
 		    				int fi = inp.getFileIndex();
 		                	int id = inp.getFromID();
-		                	System.out.println("Req lock " + fi + ".");
+		                	if (SHOW_LOG) {
+		                		System.out.println("Before request: ");
+		                    	states.get(fi).print();
+		                	}
 	        				synchronized (locks.get(fi)) {
-	        					System.out.println("Req inside " + fi + ".");
 	        					SharedState ss = states.get(fi);
 	        					Operation head = ss.getHeadOperation();
 	        					Date our = null;
@@ -539,18 +563,26 @@ public class MyServer {
 	        						System.out.println("Unhandled condition in Request handler.");
 	        					}
 	        				}
-	        				System.out.println("Req unlock " + fi + ".");
+	        				if (SHOW_LOG) {
+		                		System.out.println("After request: ");
+		                    	states.get(fi).print();
+		                	}
 	        				break;
 	        			}
 	        			case 7: {  // Reply
 		    				int fi = inp.getFileIndex();
 		                	int id = inp.getFromID();
-		                	System.out.println("Rep lock " + fi + ".");
+		                	if (SHOW_LOG) {
+		                		System.out.println("Before reply: ");
+		                    	states.get(fi).print();
+		                	}
 		                	synchronized (locks.get(fi)) {
-		                		System.out.println("Rep inside " + fi + ".");
 		                		states.get(fi).alist[id] = true;  // A[j] := true
 	        				}
-		                	System.out.println("Rep unlock " + fi + ".");
+		                	if (SHOW_LOG) {
+		                		System.out.println("After reply: ");
+		                    	states.get(fi).print();
+		                	}
 	        				break;
 	        			}
 		    			default: {
@@ -628,23 +660,17 @@ public class MyServer {
     	    				// push operation into queue
     	    				Operation o = new Operation(CMD.Read, inp, s, clientID);
     	    				int fi = o.fileIndex;
-    	    				System.out.println("Read lock " + fi + ".");
     	    				synchronized(locks.get(fi)) {
-    	    					System.out.println("Read inside " + fi + ".");
     	    					states.get(fi).addToPriorityQueue(o);
     	    				}
-    	    				System.out.println("Read unlock " + fi + ".");
     	    				break;
     	    			}
     	    			case 3: {  // Write
     	    				Operation o = new Operation(CMD.Write, inp, s, clientID);
     	    				int fi = o.fileIndex;
-    	    				System.out.println("Write lock " + fi + ".");
     	    				synchronized(locks.get(fi)) {
-    	    					System.out.println("Write inside " + fi + ".");
     	    					states.get(fi).addToPriorityQueue(o);
     	    				}
-    	    				System.out.println("Write unlock " + fi + ".");
     	    				break;
     	    			}
     	    			case 5: {  // Exit
