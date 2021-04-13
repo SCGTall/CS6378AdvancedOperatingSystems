@@ -246,7 +246,7 @@ public class MyClient extends Socket {
 		}
     	clientID = Integer.parseInt(args[0]);
     	random = new Random();
-		//random.setSeed(clientID);
+		random.setSeed(clientID);
 		// connect to server
 		try {
 			for (int i = 0; i < serverList.length; i++) {
@@ -262,6 +262,11 @@ public class MyClient extends Socket {
     	System.out.println("Begin random actions.");
     	// read or write
     	for (int r = 0; r < ROUND_TIMES; r++) {  // terminate after loop enough times
+    		try {
+				Thread.sleep(random.nextInt(250) + 250);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
     		ACTION act = getRandomAction();
     		if (act.equals(ACTION.Read)) {
     			read(getRandomSocket(), getRandomFile(), getLocalTimestamp());

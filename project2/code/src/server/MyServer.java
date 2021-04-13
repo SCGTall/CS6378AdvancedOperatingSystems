@@ -179,7 +179,6 @@ public class MyServer {
     private static class SharedState {
     	public boolean using = false;
     	public boolean waiting = false;
-    	public boolean blockForWrite = false;
     	public boolean[] alist;
     	public boolean[] deferred;
     	public boolean[] finishWrite;
@@ -196,52 +195,20 @@ public class MyServer {
     		}
     		initFinishWrite();
     	}
-    	
+
     	public void initFinishWrite() {
     		for (int i = 0; i < finishWrite.length; i++) {
     			finishWrite[i] = (i == serverID);
     		}
-    		//showState();
     	}
-    	/*
-    	public void showState() {
-    		String fStr = "";
-    		String aStr = "";
-    		for (int i = 0; i < finishWrite.length; i++) {
-    			if (i == 0) {
-    				fStr = "[";
-    				aStr = "[";
-    			} else {
-    				fStr += ", ";
-    				aStr += ", ";
-    			}
-    			fStr += bool2Str(finishWrite[i]);
-    			aStr += bool2Str(alist[i]);
-    		}
-    		fStr += "]";
-    		aStr += "]";
-    		System.out.println(fStr);
-    		System.out.println(aStr);
-    	}
-    	
-    	public String bool2Str(boolean b) {
-    		if (b) {
-    			return "1";
-    		} else {
-    			return "0";
-    		}
-    	}
-    	*/
     	
     	public boolean allFinishWrite() {
-    		boolean allFinished = true;
     		for (int i = 0; i < serverList.length; i++) {
     			if (finishWrite[i] == false) {
-    				allFinished = false;
-    				break;
+    				return false;
     			}
     		}
-    		return allFinished;
+    		return true;
     	}
 
 		public int addToPriorityQueue(Operation o) {
@@ -262,6 +229,8 @@ public class MyServer {
 			}
 			if (index == 0) {
 				haveNewHead = true;
+				waiting = false;
+				using = false;
 			}
 			return index;
 		}
@@ -353,24 +322,19 @@ public class MyServer {
         	while (true) {  // have to release lock to let other thread change state
         		synchronized(lock) {
         			Operation head = ss.getHeadOperation();
-        			if (ss.blockForWrite) {  // if block for write
-        				if (ss.allFinishWrite()) {
-        					release(head);
-        					ss.blockForWrite = false;
-        				}
-        			} else if (getAllReply(ss.alist) && head != null) {  // ready to go: waitfor (A[j] = true for all j ME);
+        			if (getAllReply(ss.alist) && head != null) {  // ready to go: waitfor (A[j] = true for all j ME);
         				ss.waiting = false;
         				ss.using = true;
         				if (head.cmd.equals(CMD.Read)) {
         					synRead(head);
-        					release(head);
         				} else if (head.cmd.equals(CMD.Write)) {
         					synWrite(head);
         				} else {
         					System.out.println("Wrong cmd in Operation.");
         				}
+        				release(head);
         			} else if (ss.haveNewHead && head != null) {  // request resource for new operation
-    					request(head);
+        				request(head);
             		}
             	}
         	}
@@ -406,8 +370,14 @@ public class MyServer {
 				for (Socket s : serverLan) {
 					toSocket(s, CMD.Write, msg);
 				}
-        		ss.blockForWrite = true;
         		ss.initFinishWrite();
+        		System.out.println("#3");
+        		while (true) {
+        			if (ss.allFinishWrite()) {
+        				break;
+        			}
+        		}
+        		System.out.println("#4");
         	} catch (IOException e) {
                 e.printStackTrace();
             }
@@ -437,12 +407,8 @@ public class MyServer {
         
         private boolean getAllReply(boolean[] alist) {
 			for (int i = 0; i < alist.length; i++) {
-				if (i == serverID) {
-					continue;
-				} else {
-					if (alist[i] == false) {
-						return false;
-					}
+				if (i != serverID && alist[i] == false) {
+					return false;
 				}
 			}
 			return true;
@@ -495,21 +461,20 @@ public class MyServer {
 			        		// write to file
 			        		Files.write(Paths.get(writeDir), newLine.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
 			        		// tell end of write
-			        		toSocket(s, CMD.Next, inp.getOriginalMSG());
+			        		toSocket(s, CMD.Next, fileName + "&" + Integer.toString(serverID));
 			        		String log = "Server " + serverID + ": ";
 			        		log += "Replicate to " + fileName + " (" + inp.getMSG(2) + ").";
 			        		System.out.println(log);
 		    				break;
 		    			}
 	        			case 4: { // Next
-	        				String ip = s.getInetAddress().toString().substring(1);
-		                	int id = getServerIndex(ip);
 		                	String fileName = inp.getMSG(0);
 		                	int fi = getFileIndex(fileName);
-		                	synchronized (locks.get(fi)) {
-		                		states.get(fi).finishWrite[id] = true;
-		                	}
-	        				break;
+		                	int id = Integer.parseInt(inp.getMSG(1));
+		                	System.out.println("#1");
+		                	states.get(fi).finishWrite[id] = true;
+	        				System.out.println("#2");
+		                	break;
 	        			}
 	        			case 5: {  // Exit
 	        				if (!s.isClosed()) {
@@ -609,7 +574,15 @@ public class MyServer {
         		Input input = fromSocket(s);
         		int clientID = Integer.parseInt(input.getMSG(0));
         		System.out.println("Client " + clientID + ": connected.");
+        		// begin at the same time
+        		boolean waitOthers = true;
+				while (waitOthers) {
+					synchronized (readyLock) {
+						waitOthers = !allClientsReady;
+					}
+				}
         		while (flag) {
+        			
         			if (s.isClosed()) {
         				break;
         			}
@@ -619,18 +592,12 @@ public class MyServer {
         			// use cmd to decide coming action
         			switch (cmd) {
 	        			case 1: {  // Enquiry
-	        				boolean waitOthers = true;
-	        				while (waitOthers) {
-	        					synchronized (readyLock) {
-	        						waitOthers = !allClientsReady;
-	        					}
-	        				}
     	    				// traverse hosted files
     	    				for (String name : fileList) {
     	    					toSocket(s, CMD.Enquiry, name);
     	    				}
     	    				// tell client to end
-    	    				toSocket(s, CMD.Next, inp.getOriginalMSG());
+    	    				toSocket(s, CMD.Next, inp.getMSG(0));
     	    				log += "Enquiry.";
     	    				break;
     	    			}
@@ -654,7 +621,7 @@ public class MyServer {
     	        			// tell client last line
     	        			toSocket(s, CMD.Read, o.lastLine);
     	        			// tell client to end
-    	        			toSocket(s, CMD.Next, inp.getOriginalMSG());
+    	        			toSocket(s, CMD.Next, fileName + "&" + Integer.toString(serverID));
     	        			log += "Read from " + fileName + " (" + o.lastLine + ").";
     	    				break;
     	    			}
@@ -675,7 +642,7 @@ public class MyServer {
     	    					}
     	    				}
     	    				// tell client to end
-    	            		toSocket(s, CMD.Next, inp.getOriginalMSG());
+    	            		toSocket(s, CMD.Next, fileName + "&" + Integer.toString(serverID));
     	            		log += "Write to " + fileName + " (" + o.newLine + ").";
     	    				break;
     	    			}
