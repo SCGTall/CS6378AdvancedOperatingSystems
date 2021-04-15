@@ -539,10 +539,6 @@ public class MyServer {
 		    				Date date = timestampToDate(timestamp);
 		    				int fi = inp.getFileIndex();
 		                	int id = inp.getFromID();
-		                	if (SHOW_LOG) {
-		                		System.out.println("Before request: ");
-		                    	states.get(fi).print();
-		                	}
 	        				synchronized (locks.get(fi)) {
 	        					SharedState ss = states.get(fi);
 	        					Operation head = ss.getHeadOperation();
@@ -563,26 +559,14 @@ public class MyServer {
 	        						System.out.println("Unhandled condition in Request handler.");
 	        					}
 	        				}
-	        				if (SHOW_LOG) {
-		                		System.out.println("After request: ");
-		                    	states.get(fi).print();
-		                	}
 	        				break;
 	        			}
 	        			case 7: {  // Reply
 		    				int fi = inp.getFileIndex();
 		                	int id = inp.getFromID();
-		                	if (SHOW_LOG) {
-		                		System.out.println("Before reply: ");
-		                    	states.get(fi).print();
-		                	}
 		                	synchronized (locks.get(fi)) {
 		                		states.get(fi).alist[id] = true;  // A[j] := true
 	        				}
-		                	if (SHOW_LOG) {
-		                		System.out.println("After reply: ");
-		                    	states.get(fi).print();
-		                	}
 	        				break;
 	        			}
 		    			default: {

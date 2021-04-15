@@ -264,7 +264,7 @@ public class MyClient extends Socket {
     	// read or write
     	for (int r = 0; r < ROUND_TIMES; r++) {  // terminate after loop enough times
     		try {
-				Thread.sleep(random.nextInt(250) + 250);
+				Thread.sleep(random.nextInt(300) + 300);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
