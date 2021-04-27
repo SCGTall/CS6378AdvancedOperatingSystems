@@ -224,6 +224,15 @@ public class Client {
 	    				System.out.println("Server " + m.from + " finish enquirying from " + from + ".");
 	    				break;
         			}
+        			case 5 : {  // Exit
+        				try {
+							this.socket.shutdownInput();
+							this.socket.close();
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+        				break;
+        			}
 	    			default: {
 	    				System.out.println("Unvalid message received: cmd(" + m.cmd + ")");
 	    				System.out.println(m.toString());
@@ -233,6 +242,15 @@ public class Client {
     		}
         }
     }
+    
+    private static boolean allClientClose() {
+		for (Socket socket : serverSockets) {
+			if (socket == null || !socket.isClosed()) {
+				return false;
+			}
+		}
+		return true;
+	}
 
 	public static void main(String[] args) {
 		
@@ -275,27 +293,29 @@ public class Client {
     	}
     	System.out.println("Finish all tasks.");
     	// clean before close
+    	for (Socket socket : serverSockets) {
+    		try {
+    			String to = Global.SERVERPREFIX + getOppositeID(socket);
+    			Message m = new Message(socket, CMD.Exit, myName, to, "", "", "");
+    			Global.toSocket(socket, m);
+				socket.shutdownOutput();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+    	}
+    	while (!allClientClose()) {
+			try {
+				Thread.sleep(250);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
     	try {
     		executor.shutdown();
 			executor.awaitTermination(500, TimeUnit.MILLISECONDS);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-    	for (Socket socket : serverSockets) {
-    		try {
-				socket.shutdownOutput();
-				while (!socket.isInputShutdown()) {
-					try {
-						Thread.sleep(100);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
-				}
-				socket.close();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-    	}
 
 	}
 

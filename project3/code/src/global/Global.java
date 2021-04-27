@@ -7,7 +7,7 @@ import java.net.Socket;
 
 public class Global {
 	
-	public static final int CLIENTNUM = 5;
+	public static final int CLIENTNUM = 1;  // TODO
 	public static final String CLIENTNAME = "client";
 	public static final String CLIENTSRC = "client.jar";
 	public static final String CLIENTPREFIX = "C";
@@ -53,8 +53,9 @@ public class Global {
 		Read(2),
 		Write(3),
 		FinishEnquiry(4),
-		Yield(5),
-		Failed(6),;
+		Exit(5),
+		Yield(6),
+		Failed(7),;
 		
 		private int value;
 

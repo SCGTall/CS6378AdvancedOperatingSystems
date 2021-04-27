@@ -7,6 +7,8 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 import global.Global;
 
@@ -153,6 +155,7 @@ public class Dispatcher {
 		System.out.println("Client num: " + clientNum);
 		System.out.println("File num: " + fileNum);
 		// set nodes
+		System.out.println("Start dispatching at " + new SimpleDateFormat("HH:mm:ss.SSS").format(new Date()) + ".");
 		String parentDir = new File("dispatcher.jar").getAbsoluteFile().getParent().toString();
 		setServers(parentDir);
 		setClients(parentDir);

@@ -52,9 +52,11 @@ public class Server {
         		boolean flag = true;
         		while (flag) {
         			if (this.socket.isInputShutdown()) {
-        				this.socket.shutdownOutput();
+        				this.socket.shutdownInput();
+	        			Message newM = new Message(socket, CMD.Exit, myName, to, "", "", "");
+	        			Global.toSocket(socket, newM);
+	    				this.socket.shutdownOutput();
         				flag = false;
-        				System.out.println("Close socket to " + to + ".");
         				break;
         			}
         			Message m = Global.fromSocket(this.socket);
@@ -105,7 +107,7 @@ public class Server {
 		    				String newLine = m.sentence;
 		    				BufferedWriter writer = null;
 		    				try {
-		    					writer = new BufferedWriter(new FileWriter(new File(file)));
+		    					writer = new BufferedWriter(new FileWriter(new File(file), true));
 		    					writer.write(newLine);
 		    	        		writer.newLine();
 		    	        		writer.flush();
@@ -124,6 +126,14 @@ public class Server {
 		    				System.out.println(to + " write to " + file + ": " + newLine);
 		    				break;
 		    			}
+		    			case 5: {  // Exit
+		    				this.socket.shutdownInput();
+		        			Message newM = new Message(socket, CMD.Exit, myName, to, "", "", "");
+		        			Global.toSocket(socket, newM);
+		    				this.socket.shutdownOutput();
+	        				flag = false;
+		    				break;
+		    			}
 		    			default: {
 		    				System.out.println("Unvalid message received: " + m.toString());
 		    				flag = false;
@@ -136,6 +146,7 @@ public class Server {
             } finally {
             	try {
             		this.socket.close();
+            		System.out.println("Close socket to " + to + ".");
             	} catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -145,7 +156,7 @@ public class Server {
 	
 	private static boolean allClientClose() {
 		for (Socket socket : clientSockets) {
-			if (socket != null && !socket.isClosed()) {
+			if (socket == null || !socket.isClosed()) {
 				return false;
 			}
 		}
@@ -190,7 +201,7 @@ public class Server {
 				int id = getOppositeID(socket);
 				clientSockets[id] = socket;
 				executor.submit(new C2SThreadHandler(socket));
-				System.out.println("Client " + id + " connected.");
+				System.out.println("Client " + Global.CLIENTPREFIX + id + " connected.");
 			}
 			while (!allClientClose()) {
 				Thread.sleep(250);
