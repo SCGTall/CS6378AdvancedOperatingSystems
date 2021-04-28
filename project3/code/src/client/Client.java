@@ -40,24 +40,27 @@ public class Client {
 		}
 		
 		public boolean higherPriority(Task t2) {
-			return smallTimestamp(this.timestamp, t2.timestamp);
+			if (this.timestamp.equals(t2.timestamp)) {
+				return Global.getID(client) < Global.getID(t2.client);
+			} else {
+				return smallTimestamp(this.timestamp, t2.timestamp);
+			}
 		}
 	}
 	
 	private static class Control {
 		public String name;
 		public boolean[] finishWrite = new boolean[Global.SERVERNUM];
-		public boolean finish;
+		public boolean finish = false;
 		public String sentence;
-		public Task lockFor;
-		public ArrayList<Task> queue;
+		public Task lockFor = null;
+		public ArrayList<Task> queue = new ArrayList<Task>();
+		public boolean waitInquire = false;
+		public boolean receiveFailed = false;
 		
 		public Control(String fileName) {
 			this.name = fileName;
 			this.initFinishWrite();
-			this.finish = false;
-			this.lockFor = null;
-			this.queue = new ArrayList<Task>();
 		}
 		
 		public void initFinishWrite() {
@@ -132,9 +135,19 @@ public class Client {
 	}
 
 	private static void read(Socket socket, Control control, String timestamp) {
+		try {
+			for (int id : quorumList) {
+				String member = Global.CLIENTPREFIX + id;
+				Socket s = clientSockets[id];
+				Message newM = new Message(s, CMD.Request, myName, member, control.name, timestamp, "");
+				Global.toSocket(s, newM);
+			}
+		} catch (IOException e) {
+            e.printStackTrace();
+        }
+		// send message to server
 		String to = Global.SERVERPREFIX + getOppositeServerID(socket);
 		try {
-    		// send message to server
 			Message m = new Message(socket, CMD.Read, myName, to, control.name, timestamp, "");
 			Global.toSocket(socket, m);
         } catch (IOException e) {
@@ -154,13 +167,13 @@ public class Client {
 	}
     
     private static void write(Socket[] sockets, Control control, String timestamp) {
+    	// send message to server
     	String newLine = myName.substring(1) + ", " + timestamp;
     	control.sentence = newLine;
     	for (int i = 0; i < Global.SERVERNUM; i++) {
     		Socket socket = sockets[i];
     		String to = Global.SERVERPREFIX + getOppositeServerID(socket);
         	try {
-        		// send message to server
     			Message m = new Message(socket, CMD.Write, myName, to, control.name, timestamp, newLine);
     			Global.toSocket(socket, m);
             } catch (IOException e) {
@@ -283,36 +296,63 @@ public class Client {
         
         @Override
         public void run() {
-    		while (true) {
-    			Message m = Global.fromSocket(this.socket);
-    			String file = m.file;
-    			String timestamp = m.timestamp;
-				//String sentence = m.sentence;
-				int id = Global.getID(m.from);
-    			switch (m.cmd) {
-	    			case 6: {  // Request
-	    				Control c = controlMap.get(file);
-	    				Task t = new Task(oppo, timestamp);
-	    				if (c.lockFor == null) {
-	    					c.lockFor = t;
-	    					Message newM = new Message(this.socket, CMD.Reply, myName, oppo, file, "", "");
-	    				} else {
-	    					for (int i = 0; i < c.queue.size(); i++) {
-	    						Task tmp = c.queue.get(i);
-	    						if (t.higherPriority(tmp)) {
-	    							c.queue.add(i, t);
-	    						}
-	    					}
-	    				}
-	    				break;
+        	try {
+	    		while (true) {
+	    			Message m = Global.fromSocket(this.socket);
+	    			String file = m.file;
+	    			String timestamp = m.timestamp;
+	    			switch (m.cmd) {
+		    			case 6: {  // Request
+		    				Control c = controlMap.get(file);
+		    				Task t = new Task(oppo, timestamp);
+		    				if (c.lockFor == null) {
+		    					c.lockFor = t;
+		    					Message newM = new Message(this.socket, CMD.Reply, myName, oppo, file, timestamp, "");
+		    					Global.toSocket(this.socket, newM);
+		    				} else {
+		    					boolean failedFlag = false;
+		    					if (c.lockFor.higherPriority(t)) {
+		    						failedFlag = true;
+		    					}
+		    					for (Task ost : c.queue) {  // outstanding tasks
+		    						if (ost.higherPriority(t)) {
+		    							failedFlag = true;
+		    						}
+		    					}
+		    					c.queue.add(t);
+		    					if (failedFlag) {
+		    						Message newM = new Message(this.socket, CMD.Failed, myName, oppo, file, timestamp, "");
+			    					Global.toSocket(this.socket, newM);
+		    					} else {
+		    						if (c.waitInquire == true) {
+		    							Message newM = new Message(this.socket, CMD.Inquire, myName, t.client, file, timestamp, "");
+		    							Socket s = clientSockets[Global.getID(t.client)];
+				    					Global.toSocket(s, newM);
+		    						} else {
+		    							c.waitInquire = true;
+		    						}
+		    					}
+		    				}
+		    				break;
+		    			}
+		    			case 9: {  // Inquire
+		    				Control c = controlMap.get(file);
+		    				if (c.receiveFailed) {
+		    					Message newM = new Message(this.socket, CMD.Yield, myName, oppo, file, timestamp, "");
+		    					Global.toSocket(this.socket, newM);
+		    				}
+		    				break;
+		    			}
+		    			default: {
+		    				System.out.println("Unvalid message received: cmd(" + m.cmd + ")");
+		    				System.out.println(m.toString());
+		    				break;
+		    			}
 	    			}
-	    			default: {
-	    				System.out.println("Unvalid message received: cmd(" + m.cmd + ")");
-	    				System.out.println(m.toString());
-	    				break;
-	    			}
-    			}
-    		}
+	    		}
+        	} catch (IOException e) {
+				e.printStackTrace();
+			}
         }
     }
     
@@ -334,7 +374,7 @@ public class Client {
 		}
     	myName = Global.SERVERPREFIX + args[0];
     	int clientID = Integer.parseInt(args[0]);
-    	quorumList = new int[] {clientID, (clientID+1) % Global.CLIENTNUM, (clientID+2) % Global.CLIENTNUM};
+    	quorumList = new int[] {(clientID+1) % Global.CLIENTNUM, (clientID+2) % Global.CLIENTNUM};
 		random.setSeed(clientID);
 		// connect to server
 		ExecutorService executor = Executors.newFixedThreadPool(Global.SERVERNUM + Global.CLIENTNUM);
