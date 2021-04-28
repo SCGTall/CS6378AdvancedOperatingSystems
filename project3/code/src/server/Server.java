@@ -23,12 +23,12 @@ public class Server {
 	private static Socket[] clientSockets = new Socket[Global.CLIENTNUM];
 	private static String[] fileList;
 	
-	private static int getOppositeID(Socket s) {
+	private static int getOppositeClientID(Socket s) {
 		String ip = s.getInetAddress().toString();
     	if (ip.charAt(0) == '/') {
     		ip = ip.substring(1);  // remove possible /
     	}
-    	for (int i = 0; i < clientSockets.length; i++) {
+    	for (int i = 0; i < Global.CLIENTNUM; i++) {
     		if (Global.clientIPs[i].equals(ip)) {
     			return i;
     		}
@@ -39,11 +39,11 @@ public class Server {
 	public static class C2SThreadHandler implements Runnable {
 
     	private Socket socket;
-    	private String to;
+    	private String oppo;
         
         public C2SThreadHandler(Socket s) throws IOException {
         	this.socket = s;
-        	this.to = Global.CLIENTPREFIX + getOppositeID(this.socket);
+        	this.oppo = Global.CLIENTPREFIX + getOppositeClientID(this.socket);
         }
         
         @Override
@@ -53,7 +53,7 @@ public class Server {
         		while (flag) {
         			if (this.socket.isInputShutdown()) {
         				this.socket.shutdownInput();
-	        			Message newM = new Message(socket, CMD.Exit, myName, to, "", "", "");
+	        			Message newM = new Message(socket, CMD.Exit, myName, oppo, "", "", "");
 	        			Global.toSocket(socket, newM);
 	    				this.socket.shutdownOutput();
         				flag = false;
@@ -68,13 +68,13 @@ public class Server {
 	        			case 1: {  // Enquiry
 		    				// traverse hosted files
 		    				for (String name : fileList) {
-		    					Message newM = new Message(this.socket, CMD.Enquiry, myName, to, name, "", "");
+		    					Message newM = new Message(this.socket, CMD.Enquiry, myName, oppo, name, "", "");
 		    					Global.toSocket(this.socket, newM);
 		    				}
 		    				// tell client to end
-		    				Message newM = new Message(this.socket, CMD.FinishEnquiry, myName, to, "", "", "");
+		    				Message newM = new Message(this.socket, CMD.FinishEnquiry, myName, oppo, "", "", "");
 	    					Global.toSocket(this.socket, newM);
-		    				System.out.println("Finish enquiry from " + to);
+		    				System.out.println("Finish enquiry from " + oppo);
 		    				break;
 		    			}
 		    			case 2: {  // Read
@@ -97,9 +97,9 @@ public class Server {
 		    	                    e.printStackTrace();
 		    	                }
 		    	            }
-		    				Message newM = new Message(this.socket, CMD.Read, myName, to, file, m.timestamp, lastLine);
+		    				Message newM = new Message(this.socket, CMD.Read, myName, oppo, file, m.timestamp, lastLine);
 	    					Global.toSocket(this.socket, newM);
-		    				System.out.println(to + " read from " + file + ": " + lastLine);
+		    				System.out.println(oppo + " read from " + file + ": " + lastLine);
 		    				break;
 		    			}
 		    			case 3: {  // Write
@@ -121,14 +121,14 @@ public class Server {
 		    	                    e.printStackTrace();
 		    	                }
 		    	            }
-		    				Message newM = new Message(this.socket, CMD.Write, myName, to, file, m.timestamp, newLine);
+		    				Message newM = new Message(this.socket, CMD.Write, myName, oppo, file, m.timestamp, newLine);
 	    					Global.toSocket(this.socket, newM);
-		    				System.out.println(to + " write to " + file + ": " + newLine);
+		    				System.out.println(oppo + " write to " + file + ": " + newLine);
 		    				break;
 		    			}
 		    			case 5: {  // Exit
 		    				this.socket.shutdownInput();
-		        			Message newM = new Message(socket, CMD.Exit, myName, to, "", "", "");
+		        			Message newM = new Message(socket, CMD.Exit, myName, oppo, "", "", "");
 		        			Global.toSocket(socket, newM);
 		    				this.socket.shutdownOutput();
 	        				flag = false;
@@ -146,7 +146,7 @@ public class Server {
             } finally {
             	try {
             		this.socket.close();
-            		System.out.println("Close socket to " + to + ".");
+            		System.out.println("Close socket to " + oppo + ".");
             	} catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -195,10 +195,10 @@ public class Server {
 			System.out.println("Listening...");
 			for (int i = 0; i < Global.CLIENTNUM; i++) {
 				Socket socket = server.accept();
-				String to = Global.CLIENTPREFIX + getOppositeID(socket);
+				String to = Global.CLIENTPREFIX + getOppositeClientID(socket);
 				Message m = new Message(socket, CMD.Message, myName, to, "", "", "Hello from " + myName + ".");
 				Global.toSocket(socket, m);
-				int id = getOppositeID(socket);
+				int id = getOppositeClientID(socket);
 				clientSockets[id] = socket;
 				executor.submit(new C2SThreadHandler(socket));
 				System.out.println("Client " + Global.CLIENTPREFIX + id + " connected.");
@@ -226,6 +226,7 @@ public class Server {
 				e.printStackTrace();
 			}
 		}
+    	System.out.println("Server " + myName + " close.");
 
 	}
 

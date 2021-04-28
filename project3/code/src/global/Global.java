@@ -7,7 +7,7 @@ import java.net.Socket;
 
 public class Global {
 	
-	public static final int CLIENTNUM = 1;  // TODO
+	public static final int CLIENTNUM = 5;
 	public static final String CLIENTNAME = "client";
 	public static final String CLIENTSRC = "client.jar";
 	public static final String CLIENTPREFIX = "C";
@@ -19,7 +19,7 @@ public class Global {
 	public static final String FILEPREFIX = "F";
 	public static final String FILESUFFIX = ".txt";
 	public static final String EMPTYSTRING = "Empty first line.";
-	public static final int BUFFER_SIZE = 64;
+	public static final int BUFFERSIZE = 64;
 	public static final boolean SHOW_LOG = true;
 	
 	public static String[] serverIPs = new String[] {
@@ -54,8 +54,11 @@ public class Global {
 		Write(3),
 		FinishEnquiry(4),
 		Exit(5),
-		Yield(6),
-		Failed(7),;
+		Request(6),
+		Reply(7),
+		Failed(8),
+		Inquire(9),
+		Yield(10),;
 		
 		private int value;
 
@@ -112,7 +115,7 @@ public class Global {
     		sb.append("|" + timestamp);
     		sb.append("|" + sentence);
     		sb.append("|");
-    		String format = "%-" + BUFFER_SIZE + "s";
+    		String format = "%-" + BUFFERSIZE + "s";
         	String padded = String.format(format, sb.toString());
     		return padded;
     	}
@@ -131,7 +134,7 @@ public class Global {
     
     
     public static Message fromSocket(Socket s) {
-    	byte buf[] = new byte[BUFFER_SIZE];
+    	byte buf[] = new byte[BUFFERSIZE];
 		try {
 			InputStream din = s.getInputStream();
 			din.read(buf);
