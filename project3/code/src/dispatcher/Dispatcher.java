@@ -14,7 +14,7 @@ import global.Global;
 
 public class Dispatcher {
 
-	private static void copyFileUsingFileChannels(File source, File destination) throws IOException {
+	public static void copyFileUsingFileChannels(File source, File destination) throws IOException {
 		
 		if (!source.exists()) {
 			return;

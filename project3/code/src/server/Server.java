@@ -16,12 +16,15 @@ import java.util.concurrent.TimeUnit;
 import global.Global;
 import global.Global.Message;
 import global.Global.CMD;
+import global.Global.Counter;
 
 public class Server {
 	
 	private static String myName;
 	private static Socket[] clientSockets = new Socket[Global.CLIENTNUM];
 	private static String[] fileList;
+	private static Counter inputCounter = new Counter();
+	private static Counter outputCounter = new Counter();
 	
 	private static int getOppositeClientID(Socket s) {
 		String ip = s.getInetAddress().toString();
@@ -53,13 +56,13 @@ public class Server {
         		while (flag) {
         			if (this.socket.isInputShutdown()) {
         				this.socket.shutdownInput();
-	        			Message newM = new Message(socket, CMD.Exit, myName, oppo, "", "", "");
-	        			Global.toSocket(socket, newM);
+	        			Message newM = new Message(CMD.Exit, myName, oppo, "", "", "");
+	        			Global.toSocket(socket, newM, outputCounter);
 	    				this.socket.shutdownOutput();
         				flag = false;
         				break;
         			}
-        			Message m = Global.fromSocket(this.socket);
+        			Message m = Global.fromSocket(this.socket, inputCounter);
         			switch (m.cmd) {
 	        			case 0: {  // Message
 		    				System.out.println(m.sentence);
@@ -68,12 +71,12 @@ public class Server {
 	        			case 1: {  // Enquiry
 		    				// traverse hosted files
 		    				for (String name : fileList) {
-		    					Message newM = new Message(this.socket, CMD.Enquiry, myName, oppo, name, "", "");
-		    					Global.toSocket(this.socket, newM);
+		    					Message newM = new Message(CMD.Enquiry, myName, oppo, name, "", "");
+		    					Global.toSocket(this.socket, newM, outputCounter);
 		    				}
 		    				// tell client to end
-		    				Message newM = new Message(this.socket, CMD.FinishEnquiry, myName, oppo, "", "", "");
-	    					Global.toSocket(this.socket, newM);
+		    				Message newM = new Message(CMD.FinishEnquiry, myName, oppo, "", "", "");
+	    					Global.toSocket(this.socket, newM, outputCounter);
 		    				System.out.println("Finish enquiry from " + oppo);
 		    				break;
 		    			}
@@ -97,9 +100,11 @@ public class Server {
 		    	                    e.printStackTrace();
 		    	                }
 		    	            }
-		    				Message newM = new Message(this.socket, CMD.Read, myName, oppo, file, m.timestamp, lastLine);
-	    					Global.toSocket(this.socket, newM);
-		    				System.out.println(oppo + " read from " + file + ": " + lastLine);
+		    				Message newM = new Message(CMD.Read, myName, oppo, file, m.timestamp, lastLine);
+	    					Global.toSocket(this.socket, newM, outputCounter);
+	    					if (Global.LOGLEVEL2) {
+	    						System.out.println(oppo + " read from " + file + ": " + lastLine);
+	    					}
 		    				break;
 		    			}
 		    			case 3: {  // Write
@@ -121,15 +126,17 @@ public class Server {
 		    	                    e.printStackTrace();
 		    	                }
 		    	            }
-		    				Message newM = new Message(this.socket, CMD.Write, myName, oppo, file, m.timestamp, newLine);
-	    					Global.toSocket(this.socket, newM);
-		    				System.out.println(oppo + " write to " + file + ": " + newLine);
+		    				Message newM = new Message(CMD.Write, myName, oppo, file, m.timestamp, newLine);
+	    					Global.toSocket(this.socket, newM, outputCounter);
+	    					if (Global.LOGLEVEL2) {
+	    						System.out.println(oppo + " write to " + file + ": " + newLine);
+	    					}
 		    				break;
 		    			}
 		    			case 5: {  // Exit
 		    				this.socket.shutdownInput();
-		        			Message newM = new Message(socket, CMD.Exit, myName, oppo, "", "", "");
-		        			Global.toSocket(socket, newM);
+		        			Message newM = new Message(CMD.Exit, myName, oppo, "", "", "");
+		        			Global.toSocket(socket, newM, outputCounter);
 		    				this.socket.shutdownOutput();
 	        				flag = false;
 		    				break;
@@ -196,15 +203,15 @@ public class Server {
 			for (int i = 0; i < Global.CLIENTNUM; i++) {
 				Socket socket = server.accept();
 				String to = Global.CLIENTPREFIX + getOppositeClientID(socket);
-				Message m = new Message(socket, CMD.Message, myName, to, "", "", "Hello from " + myName + ".");
-				Global.toSocket(socket, m);
+				Message m = new Message(CMD.Message, myName, to, "", "", "Hello from " + myName + ".");
+				Global.toSocket(socket, m, outputCounter);
 				int id = getOppositeClientID(socket);
 				clientSockets[id] = socket;
 				executor.submit(new C2SThreadHandler(socket));
 				System.out.println("Client " + Global.CLIENTPREFIX + id + " connected.");
 			}
 			while (!allClientClose()) {
-				Thread.sleep(250);
+				Thread.sleep(Global.SLEEPTIME);
 			}
 			System.out.println("Clear up remaining threads and sockets.");
 	    	// do before exit
@@ -226,6 +233,8 @@ public class Server {
 				e.printStackTrace();
 			}
 		}
+    	inputCounter.print("input");
+    	outputCounter.print("output");
     	System.out.println("Server " + myName + " close.");
 
 	}
